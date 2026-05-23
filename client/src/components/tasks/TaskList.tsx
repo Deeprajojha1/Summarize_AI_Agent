@@ -12,8 +12,10 @@ export default function TaskList() {
 
   return (
     <section className="glass-card tall-card">
-      <div className="card-title"><FiList /> Smart Tasks</div>
-      <TaskForm />
+      <div className="task-header">
+        <div className="card-title"><FiList /> Smart Tasks</div>
+        <TaskForm />
+      </div>
       <div className="task-list">
         {tasks.length ? tasks.map((task) => <TaskCard key={task._id} task={task} />) : <p className="empty-state">Your command queue is clean. Add tasks or ask AI to plan your day.</p>}
       </div>

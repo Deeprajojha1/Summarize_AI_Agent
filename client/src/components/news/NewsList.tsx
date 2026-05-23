@@ -16,7 +16,7 @@ export default function NewsList() {
       <div className="card-title"><FiZap /> AI & Developer Signals</div>
       {loading ? <Skeleton lines={5} /> : (
         <div className="news-list">
-          {articles.length ? articles.slice(0, 4).map((article) => <NewsCard key={article.url} article={article} />) : <p className="empty-state">No live news yet. Add a NewsAPI key in server/.env.</p>}
+          {articles.length ? articles.slice(0, 4).map((article) => <NewsCard key={article.url} article={article} />) : <p className="empty-state">News signals are warming up. Check backend session and try refresh.</p>}
         </div>
       )}
     </section>

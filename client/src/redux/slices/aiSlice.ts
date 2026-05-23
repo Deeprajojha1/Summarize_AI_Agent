@@ -15,7 +15,13 @@ const aiSlice = createSlice({
     suggestions: ['What should I focus on today?', 'Summarize AI news', 'Check GitHub activity', 'Prioritize my tasks'],
     loading: false,
   },
-  reducers: {},
+  reducers: {
+    resetChat: (state) => {
+      state.messages = [welcome];
+      state.suggestions = ['What should I focus on today?', 'Summarize AI news', 'Check GitHub activity', 'Prioritize my tasks'];
+      state.loading = false;
+    },
+  },
   extraReducers: (builder) => {
     builder.addCase(sendAIMessage.pending, (state, action) => {
       state.loading = true;
@@ -31,4 +37,5 @@ const aiSlice = createSlice({
   },
 });
 
+export const { resetChat } = aiSlice.actions;
 export default aiSlice.reducer;

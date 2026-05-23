@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { FiCloud, FiDroplet, FiMapPin, FiWind } from 'react-icons/fi';
+import { FiCloud, FiDroplet, FiMapPin, FiSearch, FiWind } from 'react-icons/fi';
 import { useAppDispatch, useAppSelector } from '../../hooks/useAuth';
 import { fetchWeather } from '../../redux/thunks/weatherThunk';
 import Skeleton from '../common/Skeleton';
+import ClipLoader from '../common/ClipLoader';
 
 export default function WeatherCard() {
   const [city, setCity] = useState('Bengaluru');
@@ -19,6 +20,9 @@ export default function WeatherCard() {
       <form onSubmit={submit} className="inline-form">
         <FiMapPin />
         <input value={city} onChange={(event) => setCity(event.target.value)} placeholder="Search city" />
+        <button className="icon-btn compact-btn" type="submit" aria-label="Search weather" disabled={loading}>
+          {loading ? <ClipLoader /> : <FiSearch />}
+        </button>
       </form>
       {loading ? <Skeleton /> : data && (
         <div className="weather-body">
