@@ -5,12 +5,16 @@ import { sendAIMessage } from '../thunks/aiThunk';
 const welcome: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
-  content: 'I am NexFlow AI. Ask me about weather, tech news, GitHub activity, or your task plan.',
+  content: "Hi there! I'm NexFlow Bot. Ask me anything about tasks, AI news, weather, GitHub activity, or productivity planning.",
 };
 
 const aiSlice = createSlice({
   name: 'ai',
-  initialState: { messages: [welcome] as ChatMessage[], suggestions: ['Summarize AI news today', 'Prioritize my tasks', 'Check GitHub activity'], loading: false },
+  initialState: {
+    messages: [welcome] as ChatMessage[],
+    suggestions: ['What should I focus on today?', 'Summarize AI news', 'Check GitHub activity', 'Prioritize my tasks'],
+    loading: false,
+  },
   reducers: {},
   extraReducers: (builder) => {
     builder.addCase(sendAIMessage.pending, (state, action) => {
@@ -19,7 +23,7 @@ const aiSlice = createSlice({
     }).addCase(sendAIMessage.fulfilled, (state, action) => {
       state.loading = false;
       state.messages.push({ id: crypto.randomUUID(), role: 'assistant', content: action.payload.response.answer, tools: action.payload.response.toolsUsed });
-      state.suggestions = action.payload.response.suggestions;
+      state.suggestions = action.payload.response.suggestions.length ? action.payload.response.suggestions : state.suggestions;
     }).addCase(sendAIMessage.rejected, (state) => {
       state.loading = false;
       state.messages.push({ id: crypto.randomUUID(), role: 'assistant', content: 'I could not reach the AI agent right now. Check server API keys and try again.' });

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { FiMic, FiSend, FiZap } from 'react-icons/fi';
+import { FiCpu, FiMinus, FiSend, FiX } from 'react-icons/fi';
 import { motion } from 'framer-motion';
 import { useAppDispatch, useAppSelector } from '../../hooks/useAuth';
 import { sendAIMessage } from '../../redux/thunks/aiThunk';
@@ -10,6 +10,8 @@ import TypingAnimation from './TypingAnimation';
 
 export default function AIChatPanel() {
   const [message, setMessage] = useState('');
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isClosed, setIsClosed] = useState(false);
   const dispatch = useAppDispatch();
   const { messages, suggestions, loading } = useAppSelector((state) => state.ai);
   const send = (text = message) => {
@@ -19,19 +21,44 @@ export default function AIChatPanel() {
   };
   const submit = (event: FormEvent) => { event.preventDefault(); send(); };
 
+  if (isClosed) {
+    return (
+      <button className="ai-launcher" type="button" onClick={() => setIsClosed(false)} aria-label="Open NexFlow Bot">
+        <FiCpu />
+      </button>
+    );
+  }
+
   return (
-    <motion.aside className="ai-panel" initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }}>
-      <div className="card-title"><FiZap /> NexFlow Copilot</div>
-      <div className="ai-thread">
-        {messages.map((item) => <AIMessage key={item.id} message={item} />)}
-        {loading && <TypingAnimation />}
-      </div>
-      <AIPromptSuggestions prompts={suggestions} onPick={send} />
-      <form className="ai-input" onSubmit={submit}>
-        <button type="button" className="icon-btn" aria-label="Voice input"><FiMic /></button>
-        <input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Ask NexFlow AI..." />
-        <button type="submit" className="icon-btn" aria-label="Send"><FiSend /></button>
-      </form>
+    <motion.aside className={`ai-panel ${isMinimized ? 'minimized' : ''}`} initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }}>
+      <header className="ai-panel-header">
+        <div className="ai-bot-avatar"><FiCpu /></div>
+        <div>
+          <h3>NexFlow Bot</h3>
+          <p>Ask me anything</p>
+        </div>
+        <div className="ai-window-actions">
+          <button type="button" aria-label="Minimize chat" onClick={() => setIsMinimized((value) => !value)}><FiMinus /></button>
+          <button type="button" aria-label="Close chat" onClick={() => setIsClosed(true)}><FiX /></button>
+        </div>
+      </header>
+      {!isMinimized && (
+        <>
+          <div className="ai-thread">
+            <div className="ai-floating-avatar"><FiCpu /></div>
+            {messages.map((item) => <AIMessage key={item.id} message={item} />)}
+            {loading && <TypingAnimation />}
+          </div>
+          <section className="quick-questions">
+            <p>Quick questions:</p>
+            <AIPromptSuggestions prompts={suggestions} onPick={send} />
+          </section>
+          <form className="ai-input" onSubmit={submit}>
+            <input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Ask a question..." />
+            <button type="submit" aria-label="Send"><FiSend /></button>
+          </form>
+        </>
+      )}
     </motion.aside>
   );
 }
