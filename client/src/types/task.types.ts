@@ -9,6 +9,8 @@ export type Task = {
   deadline?: string;
   progress: number;
   category?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type TaskPayload = Omit<Task, '_id'>;

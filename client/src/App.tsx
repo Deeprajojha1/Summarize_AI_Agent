@@ -8,10 +8,15 @@ import { fetchMe } from './redux/thunks/authThunk';
 export default function App() {
   const dispatch = useAppDispatch();
   const { hydrated, loading } = useAppSelector((state) => state.auth);
+  const theme = useAppSelector((state) => state.ui.theme);
 
   useEffect(() => {
     if (!hydrated) void dispatch(fetchMe());
   }, [dispatch, hydrated]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   if (!hydrated) {
     return <Loader label={loading ? 'Checking secure session' : 'Preparing NexFlow AI'} />;

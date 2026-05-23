@@ -1,32 +1,36 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { toast } from 'react-toastify';
-import { FiActivity, FiCheckCircle, FiGithub, FiMail, FiSave, FiShield, FiStar, FiUser } from 'react-icons/fi';
+import { FiActivity, FiCheckCircle, FiGithub, FiMail, FiMapPin, FiSave, FiShield, FiStar, FiUser } from 'react-icons/fi';
 import { useAppDispatch, useAppSelector } from '../../hooks/useAuth';
+import { syncProfileOverview } from '../../redux/slices/profileSlice';
 import { updateProfile } from '../../redux/thunks/authThunk';
 import ClipLoader from '../../components/common/ClipLoader';
 
 export default function Profile() {
   const dispatch = useAppDispatch();
-  const { user, loading } = useAppSelector((state) => state.auth);
+  const { user } = useAppSelector((state) => state.auth);
   const tasks = useAppSelector((state) => state.tasks.items);
+  const overview = useAppSelector((state) => state.profile.overview);
   const [name, setName] = useState(user?.name || '');
   const [githubUsername, setGithubUsername] = useState(user?.githubUsername || '');
+  const [currentAddress, setCurrentAddress] = useState(user?.currentAddress || '');
+  const [saving, setSaving] = useState(false);
 
-  const stats = useMemo(() => {
-    const completed = tasks.filter((task) => task.status === 'done').length;
-    const urgent = tasks.filter((task) => task.priority === 'urgent').length;
-    const score = tasks.length ? Math.round((completed / tasks.length) * 100) : 92;
-    return { completed, urgent, score };
-  }, [tasks]);
+  useEffect(() => {
+    dispatch(syncProfileOverview({ user, tasks }));
+  }, [dispatch, tasks, user]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    setSaving(true);
     try {
-      await dispatch(updateProfile({ name, githubUsername })).unwrap();
+      await dispatch(updateProfile({ name, githubUsername, currentAddress })).unwrap();
       toast.success('Profile updated');
     } catch {
       toast.error('Could not update profile');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -41,7 +45,7 @@ export default function Profile() {
         </div>
         <div className="profile-status">
           <FiShield />
-          <span>HTTP-only cookie session</span>
+          <span>{overview.secureSessionLabel}</span>
         </div>
       </section>
 
@@ -57,11 +61,15 @@ export default function Profile() {
             <input value={githubUsername} onChange={(event) => setGithubUsername(event.target.value)} placeholder="octocat" />
           </label>
           <label>
+            Current address or city
+            <input value={currentAddress} onChange={(event) => setCurrentAddress(event.target.value)} placeholder="Bengaluru, India" />
+          </label>
+          <label>
             Email
             <input value={user?.email || ''} disabled />
           </label>
-          <button className="primary-btn" type="submit" disabled={loading || !name.trim()}>
-            {loading ? <ClipLoader /> : <FiSave />} Save profile
+          <button className="primary-btn" type="submit" disabled={saving || !name.trim()}>
+            {saving ? <ClipLoader /> : <FiSave />} Save profile
           </button>
         </form>
 
@@ -69,28 +77,35 @@ export default function Profile() {
           <article className="glass-card profile-mini-card">
             <FiActivity />
             <div>
-              <strong>{stats.score}%</strong>
+              <strong>{overview.productivityScore}%</strong>
               <span>Productivity score</span>
             </div>
           </article>
           <article className="glass-card profile-mini-card">
             <FiCheckCircle />
             <div>
-              <strong>{stats.completed}</strong>
+              <strong>{overview.completedTasks}</strong>
               <span>Completed tasks</span>
             </div>
           </article>
           <article className="glass-card profile-mini-card">
             <FiGithub />
             <div>
-              <strong>{user?.githubUsername || 'Not linked'}</strong>
+              <strong>{overview.developerIdentity}</strong>
               <span>Developer identity</span>
+            </div>
+          </article>
+          <article className="glass-card profile-mini-card">
+            <FiMapPin />
+            <div>
+              <strong>{overview.locationContext}</strong>
+              <span>Location context</span>
             </div>
           </article>
           <article className="glass-card profile-mini-card">
             <FiMail />
             <div>
-              <strong>{user?.role || 'user'}</strong>
+              <strong>{overview.workspaceRole}</strong>
               <span>Workspace role</span>
             </div>
           </article>
@@ -102,8 +117,9 @@ export default function Profile() {
         <p>Your profile powers smarter recommendations across tasks, GitHub activity, and AI productivity planning.</p>
         <div className="insight-pills">
           <span>Secure auth active</span>
-          <span>{stats.urgent} urgent tasks</span>
+          <span>{overview.urgentTasks} urgent tasks</span>
           <span>AI reminders enabled</span>
+          <span>Profile-aware tools</span>
           <span>Deadline alerts every 10 min</span>
         </div>
       </section>

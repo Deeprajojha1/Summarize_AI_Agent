@@ -10,9 +10,10 @@ import { useAppSelector } from '../../hooks/useAuth';
 
 export default function Dashboard() {
   const tasks = useAppSelector((state) => state.tasks.items);
+  const overview = useAppSelector((state) => state.profile.overview);
   const openTasks = tasks.filter((task) => task.status !== 'done').length;
   const cards = [
-    { label: 'Productivity score', value: '91', icon: <FiTrendingUp /> },
+    { label: 'Productivity score', value: `${overview.productivityScore}%`, icon: <FiTrendingUp /> },
     { label: 'Open tasks', value: openTasks.toString(), icon: <FiCheckCircle /> },
     { label: 'AI insights', value: '12', icon: <FiZap /> },
     { label: 'Agent tools', value: '4', icon: <FiCpu /> },

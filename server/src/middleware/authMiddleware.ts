@@ -22,6 +22,7 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
     email: user.get('email'),
     role: user.get('role'),
     githubUsername: user.get('githubUsername') || undefined,
+    currentAddress: user.get('currentAddress') || undefined,
   };
   next();
 };

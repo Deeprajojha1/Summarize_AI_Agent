@@ -8,6 +8,7 @@ const userSchema = new Schema({
   role: { type: String, default: 'user' },
   avatar: String,
   githubUsername: String,
+  currentAddress: String,
 }, { timestamps: true });
 
 userSchema.pre('save', async function hashPassword() {

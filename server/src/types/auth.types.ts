@@ -9,5 +9,6 @@ export type AuthRequest = Request & {
     email: string;
     role: string;
     githubUsername?: string;
+    currentAddress?: string;
   };
 };

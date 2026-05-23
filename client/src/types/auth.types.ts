@@ -5,6 +5,7 @@ export type User = {
   role: string;
   avatar?: string;
   githubUsername?: string;
+  currentAddress?: string;
 };
 
 export type LoginPayload = { email: string; password: string };

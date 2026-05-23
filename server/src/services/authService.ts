@@ -7,6 +7,7 @@ export const serializeUser = (user: any) => ({
   role: user.role,
   avatar: user.avatar,
   githubUsername: user.githubUsername,
+  currentAddress: user.currentAddress,
 });
 
 export const createUser = (payload: { name: string; email: string; password: string }) => User.create(payload);

@@ -7,17 +7,26 @@ import RepoCard from './RepoCard';
 import ClipLoader from '../common/ClipLoader';
 
 export default function GithubStats() {
-  const [username, setUsername] = useState('octocat');
   const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.auth.user);
   const { profile, loading } = useAppSelector((state) => state.github);
-  useEffect(() => { void dispatch(fetchGithub('octocat')); }, [dispatch]);
-  const submit = (event: FormEvent) => { event.preventDefault(); void dispatch(fetchGithub(username)); };
+  const profileUsername = user?.githubUsername || 'octocat';
+  const [username, setUsername] = useState('');
+
+  useEffect(() => {
+    if (!profile || profile.username !== profileUsername) void dispatch(fetchGithub(profileUsername));
+  }, [dispatch, profile, profileUsername]);
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void dispatch(fetchGithub(username.trim() || profileUsername));
+  };
 
   return (
     <section className="glass-card">
       <div className="card-title"><FiGithub /> Developer Activity</div>
       <form className="inline-form" onSubmit={submit}>
-        <input value={username} onChange={(event) => setUsername(event.target.value)} />
+        <input value={username || profileUsername} onChange={(event) => setUsername(event.target.value)} />
         <button className="icon-btn compact-btn" type="submit" aria-label="Search GitHub" disabled={loading}>
           {loading ? <ClipLoader /> : <FiSearch />}
         </button>
