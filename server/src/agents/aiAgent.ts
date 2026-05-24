@@ -58,6 +58,29 @@ const formatDate = (value?: string) => {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
+const outOfScopeAnswer = 'Sorry, I can only help with your NexFlow workspace: tasks, productivity planning, weather, GitHub activity, and AI/developer news. Please ask something related to those tools.';
+
+const isGreeting = (message: string) => /^(hi|hello|hey|hii|hiii|hy|good morning|good afternoon|good evening|namaste|namaskar)[\s!.?]*$/i.test(message.trim());
+
+const buildGreetingAnswer = async (message: string, profile: AgentProfile) => {
+  const model = getGeminiModel();
+  const fallback = `Hi${profile.name ? ` ${profile.name}` : ''}! I can help with your tasks, weather, GitHub activity, AI/developer news, and productivity planning.`;
+
+  if (!model) return fallback;
+
+  try {
+    const prompt = `${systemPrompt}
+User name: ${profile.name || 'Unknown'}
+User message: ${message}
+
+Reply warmly in 1-2 short sentences. Do not call or mention tools. Invite the user to ask about tasks, weather, GitHub, news, or productivity.`;
+    const response = await model.generateContent(prompt);
+    return response.response.text() || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 const buildFallbackAnswer = (message: string, observations: string[], profile: AgentProfile) => {
   const text = observations.join('\n').toLowerCase();
 
@@ -173,6 +196,23 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
   };
   const selectedTools = selectTools(message, userId);
   const observations: string[] = [];
+
+  if (isGreeting(message)) {
+    return {
+      answer: await buildGreetingAnswer(message, profile),
+      toolsUsed: [],
+      suggestions: ['Check current weather', 'Summarize AI news', 'Prioritize my tasks'],
+    };
+  }
+
+  if (!selectedTools.length) {
+    return {
+      answer: outOfScopeAnswer,
+      toolsUsed: [],
+      suggestions: ['Check current weather', 'Summarize AI news', 'Prioritize my tasks'],
+    };
+  }
+
   const weatherSelected = selectedTools.some((tool) => tool.name.includes('weather'));
 
   if (weatherSelected) {
@@ -185,7 +225,7 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
     }
   }
 
-  for (const tool of selectedTools.length ? selectedTools.filter((item) => !item.name.includes('weather')) : selectTools('task news', userId).slice(0, 1)) {
+  for (const tool of selectedTools.filter((item) => !item.name.includes('weather'))) {
     try {
       const result = await (tool as any).invoke(inferArgs(tool.name, message, profile));
       observations.push(`${tool.name}: ${result}`);

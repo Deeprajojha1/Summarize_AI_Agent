@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { FiCpu, FiMessageCircle, FiMinus, FiSend, FiX } from 'react-icons/fi';
 import { motion } from 'framer-motion';
@@ -15,8 +15,14 @@ export default function AIChatPanel() {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isClosed, setIsClosed] = useState(true);
   const [showQuickQuestions, setShowQuickQuestions] = useState(true);
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
   const dispatch = useAppDispatch();
   const { messages, suggestions, loading } = useAppSelector((state) => state.ai);
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages.length, loading]);
+
   const send = (text = message) => {
     if (!text.trim()) return;
     setShowQuickQuestions(false);
@@ -71,6 +77,7 @@ export default function AIChatPanel() {
             <div className="ai-floating-avatar"><FiCpu /></div>
             {messages.map((item) => <AIMessage key={item.id} message={item} />)}
             {loading && <TypingAnimation />}
+            <div ref={threadEndRef} />
           </div>
           {showQuickQuestions && (
             <section className="quick-questions">

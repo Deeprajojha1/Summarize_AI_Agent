@@ -12,7 +12,7 @@ export const selectTools = (message: string, userId: string) => {
     if (tool.name.includes('weather')) return /weather|temperature|rain|city|humidity|address|location|where i live|my area/.test(text);
     if (tool.name.includes('news')) return /news|ai|trend|technology|developer|today/.test(text);
     if (tool.name.includes('github')) return /github|repo|repos|repository|project|projects|commit|developer|stars|activity/.test(text);
-    if (tool.name.includes('task')) return /task|todo|priority|reminder|productivity|plan/.test(text);
+    if (tool.name.includes('task')) return /task|todo|priority|reminder|productivity|plan|focus|deadline|urgent|work|schedule|next/.test(text);
     return false;
   });
 };
