@@ -477,7 +477,7 @@ kbd { margin-left: auto; display: inline-flex; align-items: center; gap: .2rem; 
   .hero-section, .auth-shell, .dashboard-grid { grid-template-columns: 1fr; }
   .hero-preview { min-height: 280px; }
   .auth-shell { align-content: center; }
-  .dashboard-shell { display: block; padding-bottom: 82px; width: 100%; min-width: 0; }
+  .dashboard-shell { display: block; padding: 128px 0 82px; width: 100%; min-width: 0; }
   .dashboard-main { width: 100%; min-width: 0; }
   .sidebar { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; height: auto; z-index: 80; flex-direction: row; overflow-x: auto; border-right: 0; border-top: 1px solid rgba(255,255,255,.08); order: 2; padding: .55rem .75rem max(.55rem, env(safe-area-inset-bottom)); gap: .5rem; scrollbar-width: none; }
   .sidebar::-webkit-scrollbar { display: none; }
@@ -485,7 +485,7 @@ kbd { margin-left: auto; display: inline-flex; align-items: center; gap: .2rem; 
   .sidebar-section { display: grid; width: 100%; grid-template-columns: repeat(5, minmax(48px, 1fr)); gap: .35rem; }
   .sidebar a, .sidebar button { width: 100%; min-width: 0; min-height: 48px; justify-content: center; padding: .7rem; font-size: 0; flex: initial; }
   .sidebar svg { font-size: 1.15rem; }
-  .page-header { position: sticky; left: auto; right: auto; align-items: flex-start; flex-direction: column; gap: .85rem; padding: .85rem 1rem; }
+  .page-header { position: fixed; top: 0; left: 0; right: 0; z-index: 75; align-items: flex-start; flex-direction: column; gap: .85rem; padding: .85rem 1rem; }
   .page-header + * { margin-top: 0; }
   .page-header > div:first-child { width: 100%; min-width: 0; }
   .notification-center { position: absolute; right: 1rem; top: .85rem; }
@@ -565,6 +565,7 @@ kbd { margin-left: auto; display: inline-flex; align-items: center; gap: .2rem; 
 }
 
 @media (max-width: 460px) {
+  .dashboard-shell { padding-top: 124px; }
   .page-header h2 { max-width: calc(100% - 56px); font-size: 1.2rem; overflow-wrap: anywhere; }
   .eyebrow { font-size: .68rem; }
   .command-bar { padding: .65rem .75rem; gap: .45rem; }
@@ -590,6 +591,7 @@ kbd { margin-left: auto; display: inline-flex; align-items: center; gap: .2rem; 
 }
 
 @media (max-width: 380px) {
+  .dashboard-shell { padding-top: 118px; }
   .dashboard-grid, .profile-page, .analytics-page, .auth-shell { padding: .55rem; }
   .auth-shell { padding: .85rem .55rem; gap: .85rem; }
   .auth-brand h1 { font-size: clamp(1.9rem, 11vw, 2.55rem); }
