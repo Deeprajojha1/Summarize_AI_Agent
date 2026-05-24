@@ -1,5 +1,6 @@
 import { getGeminiModel } from '../config/gemini.js';
 import User from '../models/User.js';
+import { getWeather } from '../services/weatherService.js';
 import { systemPrompt } from './promptTemplates.js';
 import { selectTools } from './toolRegistry.js';
 import type { AgentResult } from '../types/ai.types.js';
@@ -10,10 +11,25 @@ type AgentProfile = {
   currentAddress?: string;
 };
 
+const extractCity = (message: string) => {
+  const cleaned = message.replace(/[?.!]+$/g, '').trim();
+  const locationMatches = [...cleaned.matchAll(/\b(?:in|at|for|of)\s+([a-zA-Z\s]+?)(?=\s+(?:weather|temperature|current|today|now)\b|$)/gi)];
+
+  for (const match of locationMatches.reverse()) {
+    const city = match[1]
+      ?.split(/\b(?:in|at|for|of)\b/i)
+      .pop()
+      ?.replace(/\b(?:current|weather|temperature|today|now|the)\b/gi, '')
+      .trim();
+    if (city) return city;
+  }
+
+  return undefined;
+};
+
 const inferArgs = (toolName: string, message: string, profile: AgentProfile) => {
   if (toolName.includes('weather')) {
-    const match = message.match(/in ([a-zA-Z\s]+)$/);
-    return { city: match?.[1]?.trim() || profile.currentAddress || 'Bengaluru' };
+    return { city: extractCity(message) || profile.currentAddress || 'Bengaluru' };
   }
   if (toolName.includes('github')) {
     const match = message.match(/github\s+([a-zA-Z0-9-]+)/i) || message.match(/user\s+([a-zA-Z0-9-]+)/i);
@@ -25,24 +41,127 @@ const inferArgs = (toolName: string, message: string, profile: AgentProfile) => 
 
 const toolNames = (observations: string[]) => observations.map((item) => item.split(':')[0]);
 
-const buildFallbackAnswer = (message: string, observations: string[], profile: AgentProfile) => {
-  const tools = toolNames(observations);
-  const text = observations.join('\n').toLowerCase();
-  const picked = tools.length ? tools.join(', ') : 'task_tool';
+const getObservationData = (observations: string[], toolName: string) => {
+  const observation = observations.find((item) => item.startsWith(`${toolName}:`));
+  if (!observation) return null;
 
-  if (text.includes('news_tool')) {
-    return `I selected the News tool for your question: "${message}". I fetched the available AI/developer news context and summarized it without blocking on Gemini.\n\nKey takeaway: AI tooling is moving toward agentic workflows, better developer productivity, and faster automation inside everyday dashboards. For your project, highlight how NexFlow AI chooses the news API dynamically, then converts raw articles into action-focused insights.\n\nNext actions: review the newest AI cards, connect this trend to frontend/backend productivity, and ask me to compare the news impact with your task list.`;
+  try {
+    return JSON.parse(observation.slice(observation.indexOf(':') + 1).trim());
+  } catch {
+    return null;
+  }
+};
+
+const formatDate = (value?: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const buildFallbackAnswer = (message: string, observations: string[], profile: AgentProfile) => {
+  const text = observations.join('\n').toLowerCase();
+
+  if (text.includes('weather_tool')) {
+    const weather = getObservationData(observations, 'weather_tool') as {
+      city?: string;
+      temperature?: number;
+      humidity?: number;
+      windSpeed?: number;
+      condition?: string;
+      error?: string;
+    } | null;
+
+    if (weather?.error) {
+      return `I could not fetch the current weather for "${extractCity(message) || profile.currentAddress || 'your city'}": ${weather.error}`;
+    }
+
+    if (weather) {
+      const city = weather.city || extractCity(message) || profile.currentAddress || 'your city';
+      const details = [
+        weather.condition ? `${weather.condition}` : null,
+        typeof weather.temperature === 'number' ? `${weather.temperature} C` : null,
+        typeof weather.humidity === 'number' ? `${weather.humidity}% humidity` : null,
+        typeof weather.windSpeed === 'number' ? `${weather.windSpeed} m/s wind` : null,
+      ].filter(Boolean).join(', ');
+
+      return `Current weather in ${city}: ${details || 'weather data is available, but some details are missing.'}`;
+    }
+
+    return `I used the Weather tool for your question: "${message}", but the weather result was not readable. Please try again with a city name like "weather in Roorkee".`;
   }
 
   if (text.includes('github_tool')) {
-    return `I selected the GitHub tool for your question: "${message}". ${profile.githubUsername ? `I used your saved GitHub username "${profile.githubUsername}" from your profile.` : 'I used the fallback GitHub username because your profile does not have one yet.'}\n\nUse this data to discuss repository health, recent work momentum, public repo count, stars, and activity patterns. If activity is low, plan one focused coding block and one cleanup/refactor block.`;
+    const github = getObservationData(observations, 'github_tool') as {
+      username?: string;
+      followers?: number;
+      publicRepos?: number;
+      totalStars?: number;
+      repositories?: Array<{ name?: string; stars?: number; forks?: number; language?: string; updatedAt?: string }>;
+      source?: string;
+      error?: string;
+    } | null;
+
+    if (github?.error) return `I could not fetch GitHub details: ${github.error}`;
+    if (github) {
+      const repos = github.repositories?.slice(0, 3).map((repo) => {
+        const parts = [
+          repo.name || 'Unnamed repo',
+          repo.language || null,
+          typeof repo.stars === 'number' ? `${repo.stars} stars` : null,
+          formatDate(repo.updatedAt) ? `updated ${formatDate(repo.updatedAt)}` : null,
+        ].filter(Boolean);
+        return parts.join(' - ');
+      }) || [];
+
+      return [
+        `GitHub summary for ${github.username || profile.githubUsername || 'the selected user'}: ${github.publicRepos ?? 0} public repositories, ${github.followers ?? 0} followers, and ${github.totalStars ?? 0} total stars across the latest repos.`,
+        repos.length ? `Top recent repos: ${repos.join('; ')}.` : 'No public repositories were found.',
+      ].filter(Boolean).join('\n\n');
+    }
   }
 
-  if (text.includes('weather_tool')) {
-    return `I selected the Weather tool for your question: "${message}". ${profile.currentAddress ? `I used your saved address/city "${profile.currentAddress}" from your profile.` : 'I used the fallback city because your profile does not have an address yet.'}\n\nWeather and location context can help plan work intensity and reminders. If conditions are distracting or travel-heavy, keep deep work lighter and move complex coding tasks into a protected time block.`;
+  if (text.includes('news_tool')) {
+    const news = getObservationData(observations, 'news_tool') as Array<{
+      title?: string;
+      source?: string;
+      summary?: string;
+      publishedAt?: string;
+      category?: string;
+    }> | null;
+
+    if (Array.isArray(news) && news.length) {
+      const headlines = news.slice(0, 3).map((item, index) => {
+        const date = formatDate(item.publishedAt);
+        return `${index + 1}. ${item.title || 'Technology update'}${item.source ? ` (${item.source})` : ''}${date ? ` - ${date}` : ''}: ${item.summary || 'No summary available.'}`;
+      }).join('\n');
+
+      return `Here are the latest ${news[0]?.category || 'technology'} updates:\n\n${headlines}`;
+    }
   }
 
-  return `I selected the Task tool for your question: "${message}". I reviewed task/productivity context and prepared a practical plan.\n\nFocus on urgent unfinished tasks first, then high-priority tasks with deadlines. Keep one small task for momentum and one deep-work task for meaningful progress.`;
+  if (text.includes('task_tool')) {
+    const taskData = getObservationData(observations, 'task_tool') as {
+      mode?: string;
+      total?: number;
+      open?: number;
+      urgent?: number;
+      tasks?: Array<{ title?: string; priority?: string; status?: string; deadline?: string }>;
+      error?: string;
+    } | null;
+
+    if (taskData?.error) return `I could not read your task list: ${taskData.error}`;
+    if (taskData) {
+      const openTasks = taskData.tasks?.filter((task) => task.status !== 'done').slice(0, 4) || [];
+      const taskLines = openTasks.map((task, index) => {
+        const deadline = formatDate(task.deadline);
+        return `${index + 1}. ${task.title || 'Untitled task'} - ${task.priority || 'normal'} priority${deadline ? `, due ${deadline}` : ''}`;
+      }).join('\n');
+
+      return `Task summary: ${taskData.open ?? 0} open out of ${taskData.total ?? 0} total tasks, with ${taskData.urgent ?? 0} urgent tasks.\n\n${taskLines || 'No open tasks found.'}`;
+    }
+  }
+
+  return `I could not find a matching tool result for your question: "${message}". Please ask about weather, GitHub, news, or tasks.`;
 };
 
 export const runAgent = async (message: string, userId: string): Promise<AgentResult> => {
@@ -54,8 +173,19 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
   };
   const selectedTools = selectTools(message, userId);
   const observations: string[] = [];
+  const weatherSelected = selectedTools.some((tool) => tool.name.includes('weather'));
 
-  for (const tool of selectedTools.length ? selectedTools : selectTools('task news', userId).slice(0, 1)) {
+  if (weatherSelected) {
+    try {
+      const args = inferArgs('weather_tool', message, profile) as { city: string };
+      const result = await getWeather(args.city);
+      observations.push(`weather_tool: ${JSON.stringify(result)}`);
+    } catch (error) {
+      observations.push(`weather_tool: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Tool failed' })}`);
+    }
+  }
+
+  for (const tool of selectedTools.length ? selectedTools.filter((item) => !item.name.includes('weather')) : selectTools('task news', userId).slice(0, 1)) {
     try {
       const result = await (tool as any).invoke(inferArgs(tool.name, message, profile));
       observations.push(`${tool.name}: ${result}`);
@@ -64,17 +194,26 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
     }
   }
 
+  const deterministicAnswer = buildFallbackAnswer(message, observations, profile);
+  if (selectedTools.length) {
+    return {
+      answer: deterministicAnswer,
+      toolsUsed: toolNames(observations),
+      suggestions: ['What should I do next?', 'Summarize today in 3 bullets', 'Find risks in my task list'],
+    };
+  }
+
   const model = getGeminiModel();
   if (!model) {
     return {
-      answer: buildFallbackAnswer(message, observations, profile),
+      answer: deterministicAnswer,
       toolsUsed: toolNames(observations),
       suggestions: ['Track my GitHub projects', 'Use my address for weather', 'Prioritize my urgent tasks'],
     };
   }
 
   try {
-    const prompt = `${systemPrompt}\nUser profile context:\n- Name: ${profile.name || 'Unknown'}\n- GitHub username: ${profile.githubUsername || 'Not provided'}\n- Current address/city: ${profile.currentAddress || 'Not provided'}\n\nUser request: ${message}\nTool observations:\n${observations.join('\n')}\nRespond in 2-4 concise paragraphs and include clear next actions. If you used GitHub or weather data, mention that it came from the saved profile context.`;
+    const prompt = `${systemPrompt}\nUser profile context:\n- Name: ${profile.name || 'Unknown'}\n- GitHub username: ${profile.githubUsername || 'Not provided'}\n- Current address/city: ${profile.currentAddress || 'Not provided'}\n\nOriginal user question:\n${message}\n\nTool observations:\n${observations.join('\n')}\n\nAnswer instructions:\n- Answer the original user question directly first.\n- Use exact facts from the tool observations.\n- Do not write generic productivity advice unless the user asked for planning or productivity help.\n- If weather data is present, include city, condition, temperature, humidity, and wind speed.\n- Keep the answer concise.`;
     const response = await model.generateContent(prompt);
     return {
       answer: response.response.text(),
@@ -83,7 +222,7 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
     };
   } catch {
     return {
-      answer: buildFallbackAnswer(message, observations, profile),
+      answer: deterministicAnswer,
       toolsUsed: toolNames(observations),
       suggestions: ['Track my GitHub projects', 'Use my address for weather', 'Prioritize my urgent tasks'],
     };

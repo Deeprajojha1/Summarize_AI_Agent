@@ -21,6 +21,12 @@ export default function Profile() {
     dispatch(syncProfileOverview({ user, tasks }));
   }, [dispatch, tasks, user]);
 
+  useEffect(() => {
+    setName(user?.name || '');
+    setGithubUsername(user?.githubUsername || '');
+    setCurrentAddress(user?.currentAddress || '');
+  }, [user]);
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);

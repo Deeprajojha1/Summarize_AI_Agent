@@ -1,39 +1,9 @@
 import axios from 'axios';
 import { compactText } from '../utils/helpers.js';
 
-const fallbackNews = (category: string) => [
-  {
-    title: 'AI agents are becoming productivity copilots for developers',
-    source: 'NexFlow Intelligence',
-    url: 'https://news.google.com/search?q=AI%20agents%20developer%20productivity',
-    description: 'Fallback intelligence shown when the live NewsAPI request is unavailable.',
-    summary: 'AI agents are moving beyond chat into task planning, code assistance, workflow automation, and dashboard-native recommendations.',
-    publishedAt: new Date().toISOString(),
-    category,
-  },
-  {
-    title: 'Developer tools are shifting toward unified command centers',
-    source: 'NexFlow Intelligence',
-    url: 'https://news.google.com/search?q=developer%20tools%20AI%20dashboard',
-    description: 'Fallback developer trend summary.',
-    summary: 'Modern developer platforms are combining repositories, tasks, analytics, incidents, and AI assistants into one operating surface.',
-    publishedAt: new Date().toISOString(),
-    category: 'developer',
-  },
-  {
-    title: 'Frontend teams are adopting AI-assisted workflows',
-    source: 'NexFlow Intelligence',
-    url: 'https://news.google.com/search?q=AI%20frontend%20development%20trends',
-    description: 'Fallback frontend trend summary.',
-    summary: 'AI-assisted frontend workflows are helping teams move faster with design iteration, code generation, testing, and review automation.',
-    publishedAt: new Date().toISOString(),
-    category: 'frontend',
-  },
-];
-
 export const getTechNews = async (category = 'ai') => {
   const key = process.env.NEWS_API_KEY;
-  if (!key) return fallbackNews(category);
+  if (!key) throw new Error('News API key is missing. Real news data cannot be fetched.');
 
   try {
     const query = category === 'developer' ? 'software development programming' : 'artificial intelligence AI startups';
@@ -49,7 +19,7 @@ export const getTechNews = async (category = 'ai') => {
     });
 
     const articles = Array.isArray(data.articles) ? data.articles : [];
-    if (!articles.length) return fallbackNews(category);
+    if (!articles.length) return [];
 
     return articles.map((item: any, index: number) => ({
       title: item.title || `Technology update ${index + 1}`,
@@ -60,7 +30,10 @@ export const getTechNews = async (category = 'ai') => {
       publishedAt: item.publishedAt || new Date().toISOString(),
       category,
     }));
-  } catch {
-    return fallbackNews(category);
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      throw new Error(`News lookup failed (${error.response?.status || 'network error'})`);
+    }
+    throw error;
   }
 };

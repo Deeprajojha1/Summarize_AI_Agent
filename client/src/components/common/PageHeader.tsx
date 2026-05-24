@@ -19,8 +19,10 @@ export default function PageHeader() {
   const [searchError, setSearchError] = useState('');
   const [searchResults, setSearchResults] = useState<Task[] | null>(null);
   const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.auth.user);
   const tasks = useAppSelector((state) => state.tasks.items);
   const alertedRef = useRef<string>('');
+  const displayName = user?.name?.trim() || 'operator';
 
   const alerts = useMemo(() => {
     return tasks
@@ -88,7 +90,7 @@ export default function PageHeader() {
     <motion.header className="page-header" initial={{ y: -16, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
       <div>
         <span className="eyebrow">AI Operating System</span>
-        <h2>Good evening, operator.</h2>
+        <h2>Hello, {displayName}</h2>
       </div>
       <form className="command-bar search-command" onSubmit={submitSearch}>
         <FiSearch />

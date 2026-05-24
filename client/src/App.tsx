@@ -1,5 +1,6 @@
 import { BrowserRouter } from 'react-router-dom';
 import { useEffect } from 'react';
+import { ToastContainer } from 'react-toastify';
 import AppRoutes from './routes/AppRoutes';
 import Loader from './components/common/Loader';
 import { useAppDispatch, useAppSelector } from './hooks/useAuth';
@@ -25,6 +26,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppRoutes />
+      <ToastContainer position="top-right" theme={theme} closeButton={false} />
     </BrowserRouter>
   );
 }

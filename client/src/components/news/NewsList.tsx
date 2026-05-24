@@ -7,7 +7,7 @@ import NewsCard from './NewsCard';
 
 export default function NewsList() {
   const dispatch = useAppDispatch();
-  const { articles, loading } = useAppSelector((state) => state.news);
+  const { articles, loading, error } = useAppSelector((state) => state.news);
 
   useEffect(() => { void dispatch(fetchNews('ai')); }, [dispatch]);
 
@@ -16,7 +16,7 @@ export default function NewsList() {
       <div className="card-title"><FiZap /> AI & Developer Signals</div>
       {loading ? <Skeleton lines={5} /> : (
         <div className="news-list">
-          {articles.length ? articles.slice(0, 4).map((article) => <NewsCard key={article.url} article={article} />) : <p className="empty-state">News signals are warming up. Check backend session and try refresh.</p>}
+          {error ? <p className="empty-state">{error}</p> : articles.length ? articles.slice(0, 4).map((article) => <NewsCard key={article.url} article={article} />) : <p className="empty-state">No real news articles were returned by the API.</p>}
         </div>
       )}
     </section>

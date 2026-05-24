@@ -16,4 +16,6 @@ export type GithubProfile = {
   totalStars: number;
   repositories: Repository[];
   activity: { day: string; commits: number }[];
+  error?: string;
+  source?: 'live';
 };
