@@ -1,9 +1,12 @@
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { createAgent } from 'langchain';
 import { getGeminiModel } from '../config/gemini.js';
 import User from '../models/User.js';
 import { getWeather } from '../services/weatherService.js';
 import { systemPrompt } from './promptTemplates.js';
-import { selectTools } from './toolRegistry.js';
+import { getTools, selectTools } from './toolRegistry.js';
 import type { AgentResult } from '../types/ai.types.js';
+import { logger } from '../utils/logger.js';
 
 type AgentProfile = {
   name?: string;
@@ -59,8 +62,13 @@ const formatDate = (value?: string) => {
 };
 
 const outOfScopeAnswer = 'Sorry, I can only help with your NexFlow workspace: tasks, productivity planning, weather, GitHub activity, and AI/developer news. Please ask something related to those tools.';
-
 const isGreeting = (message: string) => /^(hi|hello|hey|hii|hiii|hy|good morning|good afternoon|good evening|namaste|namaskar)[\s!.?]*$/i.test(message.trim());
+
+const suggestions = {
+  default: ['Check current weather', 'Summarize AI news', 'Prioritize my tasks'],
+  tool: ['What should I do next?', 'Summarize today in 3 bullets', 'Find risks in my task list'],
+  fallback: ['Track my GitHub projects', 'Use my address for weather', 'Prioritize my urgent tasks'],
+};
 
 const buildGreetingAnswer = async (message: string, profile: AgentProfile) => {
   const model = getGeminiModel();
@@ -187,13 +195,110 @@ const buildFallbackAnswer = (message: string, observations: string[], profile: A
   return `I could not find a matching tool result for your question: "${message}". Please ask about weather, GitHub, news, or tasks.`;
 };
 
-export const runAgent = async (message: string, userId: string): Promise<AgentResult> => {
-  const user = await User.findById(userId).select('name githubUsername currentAddress');
-  const profile: AgentProfile = {
-    name: user?.get('name'),
-    githubUsername: user?.get('githubUsername') || undefined,
-    currentAddress: user?.get('currentAddress') || undefined,
+const getMessageType = (message: unknown) => {
+  if (!message || typeof message !== 'object') return '';
+  const typedMessage = message as { type?: string; _getType?: () => string };
+  return typedMessage.type || typedMessage._getType?.() || '';
+};
+
+const getMessageText = (message: unknown) => {
+  if (!message || typeof message !== 'object') return '';
+  const typedMessage = message as { text?: unknown; content?: unknown };
+
+  if (typeof typedMessage.text === 'string' && typedMessage.text.trim()) {
+    return typedMessage.text.trim();
+  }
+
+  if (typeof typedMessage.content === 'string') return typedMessage.content.trim();
+
+  if (Array.isArray(typedMessage.content)) {
+    return typedMessage.content
+      .map((block) => {
+        if (typeof block === 'string') return block;
+        if (block && typeof block === 'object' && 'text' in block) return String((block as { text?: unknown }).text || '');
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+
+  return '';
+};
+
+const getLangChainToolsUsed = (messages: unknown[]) => {
+  const names = new Set<string>();
+
+  for (const message of messages) {
+    if (!message || typeof message !== 'object') continue;
+
+    const toolCalls = (message as { tool_calls?: Array<{ name?: string }> }).tool_calls;
+    for (const toolCall of toolCalls || []) {
+      if (toolCall.name) names.add(toolCall.name);
+    }
+
+    if (getMessageType(message) === 'tool') {
+      const name = (message as { name?: string }).name;
+      if (name) names.add(name);
+    }
+  }
+
+  return [...names];
+};
+
+const getLangChainAnswer = (messages: unknown[]) => {
+  return [...messages]
+    .reverse()
+    .filter((message) => getMessageType(message) === 'ai')
+    .map(getMessageText)
+    .find(Boolean);
+};
+
+const runLangChainAgent = async (message: string, userId: string, profile: AgentProfile): Promise<AgentResult | null> => {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) return null;
+
+  const model = new ChatGoogleGenerativeAI({
+    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    apiKey,
+    temperature: 0.2,
+    maxRetries: 2,
+  });
+
+  const agent = createAgent({
+    model,
+    tools: getTools(userId),
+    systemPrompt: `${systemPrompt}
+
+User profile context:
+- Name: ${profile.name || 'Unknown'}
+- GitHub username: ${profile.githubUsername || 'Not provided'}
+- Current address/city: ${profile.currentAddress || 'Not provided'}
+
+Use the provided tools when the user asks about weather, GitHub, news, tasks, planning, priorities, reminders, or productivity.
+If the user only greets you, reply warmly without tools.
+If the question is outside this workspace, say you can only help with NexFlow workspace topics.
+When calling tools, infer the best arguments from the user's message and profile context.
+Return a concise final answer using the tool results. Do not expose internal reasoning.`,
+  });
+
+  const result = await agent.invoke({
+    messages: [{ role: 'user', content: message }],
+  });
+
+  const messages = (result as { messages?: unknown[] }).messages || [];
+  const answer = getLangChainAnswer(messages);
+  if (!answer) return null;
+
+  const toolsUsed = getLangChainToolsUsed(messages);
+
+  return {
+    answer,
+    toolsUsed,
+    suggestions: toolsUsed.length ? suggestions.tool : suggestions.default,
   };
+};
+
+const runDeterministicAgent = async (message: string, userId: string, profile: AgentProfile): Promise<AgentResult> => {
   const selectedTools = selectTools(message, userId);
   const observations: string[] = [];
 
@@ -201,7 +306,7 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
     return {
       answer: await buildGreetingAnswer(message, profile),
       toolsUsed: [],
-      suggestions: ['Check current weather', 'Summarize AI news', 'Prioritize my tasks'],
+      suggestions: suggestions.default,
     };
   }
 
@@ -209,7 +314,7 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
     return {
       answer: outOfScopeAnswer,
       toolsUsed: [],
-      suggestions: ['Check current weather', 'Summarize AI news', 'Prioritize my tasks'],
+      suggestions: suggestions.default,
     };
   }
 
@@ -239,7 +344,7 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
     return {
       answer: deterministicAnswer,
       toolsUsed: toolNames(observations),
-      suggestions: ['What should I do next?', 'Summarize today in 3 bullets', 'Find risks in my task list'],
+      suggestions: suggestions.tool,
     };
   }
 
@@ -248,7 +353,7 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
     return {
       answer: deterministicAnswer,
       toolsUsed: toolNames(observations),
-      suggestions: ['Track my GitHub projects', 'Use my address for weather', 'Prioritize my urgent tasks'],
+      suggestions: suggestions.fallback,
     };
   }
 
@@ -258,13 +363,31 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
     return {
       answer: response.response.text(),
       toolsUsed: toolNames(observations),
-      suggestions: ['What should I do next?', 'Summarize today in 3 bullets', 'Find risks in my task list'],
+      suggestions: suggestions.tool,
     };
   } catch {
     return {
       answer: deterministicAnswer,
       toolsUsed: toolNames(observations),
-      suggestions: ['Track my GitHub projects', 'Use my address for weather', 'Prioritize my urgent tasks'],
+      suggestions: suggestions.fallback,
     };
   }
+};
+
+export const runAgent = async (message: string, userId: string): Promise<AgentResult> => {
+  const user = await User.findById(userId).select('name githubUsername currentAddress');
+  const profile: AgentProfile = {
+    name: user?.get('name'),
+    githubUsername: user?.get('githubUsername') || undefined,
+    currentAddress: user?.get('currentAddress') || undefined,
+  };
+
+  try {
+    const langChainResult = await runLangChainAgent(message, userId, profile);
+    if (langChainResult) return langChainResult;
+  } catch (error) {
+    logger.error('LangChain agent failed; using deterministic fallback', error);
+  }
+
+  return runDeterministicAgent(message, userId, profile);
 };

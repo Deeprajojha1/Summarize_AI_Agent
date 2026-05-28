@@ -12,6 +12,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@langchain/core": "^1.0.6",
+    "@langchain/google-genai": "^2.1.31",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
@@ -26,6 +27,7 @@
     "express": "^5.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
+    "langchain": "^1.4.2",
     "mongoose": "^9.0.2",
     "morgan": "^1.10.1",
     "typescript": "~6.0.2",
