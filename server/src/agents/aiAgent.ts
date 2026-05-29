@@ -1,11 +1,12 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { createAgent } from 'langchain';
-import { getGeminiModel } from '../config/gemini.js';
+import { generateGeminiText, getGeminiModelNames } from '../config/gemini.js';
 import User from '../models/User.js';
 import { getWeather } from '../services/weatherService.js';
+import { answerFromDocuments, hasReadyDocuments } from '../services/documentService.js';
 import { systemPrompt } from './promptTemplates.js';
 import { getTools, selectTools } from './toolRegistry.js';
-import type { AgentResult } from '../types/ai.types.js';
+import type { AgentHistoryMessage, AgentResult } from '../types/ai.types.js';
 import { logger } from '../utils/logger.js';
 
 type AgentProfile = {
@@ -39,6 +40,10 @@ const inferArgs = (toolName: string, message: string, profile: AgentProfile) => 
     return { username: match?.[1] || profile.githubUsername || 'octocat' };
   }
   if (toolName.includes('news')) return { category: /developer|coding|frontend/.test(message.toLowerCase()) ? 'developer' : 'ai' };
+  if (toolName.includes('document')) {
+    const mode = /prepare|generate|create|make|draft|write|suggest|practice|mock|question|questions|interview/i.test(message) ? 'document_generation' : 'rag_search';
+    return { question: message, mode };
+  }
   return { mode: /priorit/.test(message.toLowerCase()) ? 'prioritize' : 'summary' };
 };
 
@@ -61,8 +66,17 @@ const formatDate = (value?: string) => {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-const outOfScopeAnswer = 'Sorry, I can only help with your NexFlow workspace: tasks, productivity planning, weather, GitHub activity, and AI/developer news. Please ask something related to those tools.';
 const isGreeting = (message: string) => /^(hi|hello|hey|hii|hiii|hy|good morning|good afternoon|good evening|namaste|namaskar)[\s!.?]*$/i.test(message.trim());
+const isDocumentQuestion = (message: string) => /document|doc|pdf|resume|cv|file|uploaded|from this|based on this|based on the document|according to|extract|summarize|summary/i.test(message);
+const isNonDocumentToolQuestion = (message: string) => selectTools(message, '').some((tool) => !tool.name.includes('document'));
+const refersToPreviousQuestion = (message: string) => /previous question|last question|above question|pichle|pichla|pehle wale|last wale|us question/i.test(message);
+
+const resolveMessageReference = (message: string, history: AgentHistoryMessage[]) => {
+  if (!refersToPreviousQuestion(message)) return message;
+  const previousUserQuestion = [...history].reverse().find((item) => item.role === 'user')?.content;
+  if (!previousUserQuestion) return message;
+  return `${message}\n\nPrevious user question: ${previousUserQuestion}`;
+};
 
 const suggestions = {
   default: ['Check current weather', 'Summarize AI news', 'Prioritize my tasks'],
@@ -71,10 +85,7 @@ const suggestions = {
 };
 
 const buildGreetingAnswer = async (message: string, profile: AgentProfile) => {
-  const model = getGeminiModel();
   const fallback = `Hi${profile.name ? ` ${profile.name}` : ''}! I can help with your tasks, weather, GitHub activity, AI/developer news, and productivity planning.`;
-
-  if (!model) return fallback;
 
   try {
     const prompt = `${systemPrompt}
@@ -82,10 +93,28 @@ User name: ${profile.name || 'Unknown'}
 User message: ${message}
 
 Reply warmly in 1-2 short sentences. Do not call or mention tools. Invite the user to ask about tasks, weather, GitHub, news, or productivity.`;
-    const response = await model.generateContent(prompt);
-    return response.response.text() || fallback;
+    return await generateGeminiText(prompt) || fallback;
   } catch {
     return fallback;
+  }
+};
+
+const buildGeneralAnswer = async (message: string, profile: AgentProfile) => {
+  try {
+    const prompt = `${systemPrompt}
+User profile context:
+- Name: ${profile.name || 'Unknown'}
+- GitHub username: ${profile.githubUsername || 'Not provided'}
+- Current address/city: ${profile.currentAddress || 'Not provided'}
+
+User question:
+${message}
+
+Answer directly and clearly. If the question is technical, explain it with a simple example. Keep the answer concise.`;
+    return await generateGeminiText(prompt) || 'I could not generate an answer right now. Please try again.';
+  } catch (error) {
+    logger.error('General Gemini answer failed', error);
+    return 'Gemini is temporarily unavailable. Please try again in a moment.';
   }
 };
 
@@ -192,6 +221,18 @@ const buildFallbackAnswer = (message: string, observations: string[], profile: A
     }
   }
 
+  if (text.includes('document_tool')) {
+    const documentData = getObservationData(observations, 'document_tool') as {
+      answer?: string;
+      sources?: Array<{ filename?: string; chunkIndex?: number; score?: number }>;
+      mode?: string;
+      error?: string;
+    } | null;
+
+    if (documentData?.error) return `I could not read your uploaded documents: ${documentData.error}`;
+    if (documentData?.answer) return documentData.answer;
+  }
+
   return `I could not find a matching tool result for your question: "${message}". Please ask about weather, GitHub, news, or tasks.`;
 };
 
@@ -253,12 +294,12 @@ const getLangChainAnswer = (messages: unknown[]) => {
     .find(Boolean);
 };
 
-const runLangChainAgent = async (message: string, userId: string, profile: AgentProfile): Promise<AgentResult | null> => {
+const runLangChainAgent = async (message: string, userId: string, profile: AgentProfile, history: AgentHistoryMessage[]): Promise<AgentResult | null> => {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) return null;
 
   const model = new ChatGoogleGenerativeAI({
-    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    model: getGeminiModelNames()[0],
     apiKey,
     temperature: 0.2,
     maxRetries: 2,
@@ -275,14 +316,15 @@ User profile context:
 - Current address/city: ${profile.currentAddress || 'Not provided'}
 
 Use the provided tools when the user asks about weather, GitHub, news, tasks, planning, priorities, reminders, or productivity.
+Use document_tool when the user asks about uploaded files, PDFs, resumes, interview questions from a document, document summaries, document insights, or document-based Q&A.
 If the user only greets you, reply warmly without tools.
-If the question is outside this workspace, say you can only help with NexFlow workspace topics.
+If no tool is needed, answer the user directly with general Gemini knowledge.
 When calling tools, infer the best arguments from the user's message and profile context.
 Return a concise final answer using the tool results. Do not expose internal reasoning.`,
   });
 
   const result = await agent.invoke({
-    messages: [{ role: 'user', content: message }],
+    messages: [...history.slice(-6), { role: 'user', content: message }],
   });
 
   const messages = (result as { messages?: unknown[] }).messages || [];
@@ -312,7 +354,7 @@ const runDeterministicAgent = async (message: string, userId: string, profile: A
 
   if (!selectedTools.length) {
     return {
-      answer: outOfScopeAnswer,
+      answer: await buildGeneralAnswer(message, profile),
       toolsUsed: [],
       suggestions: suggestions.default,
     };
@@ -348,20 +390,10 @@ const runDeterministicAgent = async (message: string, userId: string, profile: A
     };
   }
 
-  const model = getGeminiModel();
-  if (!model) {
-    return {
-      answer: deterministicAnswer,
-      toolsUsed: toolNames(observations),
-      suggestions: suggestions.fallback,
-    };
-  }
-
   try {
     const prompt = `${systemPrompt}\nUser profile context:\n- Name: ${profile.name || 'Unknown'}\n- GitHub username: ${profile.githubUsername || 'Not provided'}\n- Current address/city: ${profile.currentAddress || 'Not provided'}\n\nOriginal user question:\n${message}\n\nTool observations:\n${observations.join('\n')}\n\nAnswer instructions:\n- Answer the original user question directly first.\n- Use exact facts from the tool observations.\n- Do not write generic productivity advice unless the user asked for planning or productivity help.\n- If weather data is present, include city, condition, temperature, humidity, and wind speed.\n- Keep the answer concise.`;
-    const response = await model.generateContent(prompt);
     return {
-      answer: response.response.text(),
+      answer: await generateGeminiText(prompt),
       toolsUsed: toolNames(observations),
       suggestions: suggestions.tool,
     };
@@ -374,7 +406,7 @@ const runDeterministicAgent = async (message: string, userId: string, profile: A
   }
 };
 
-export const runAgent = async (message: string, userId: string): Promise<AgentResult> => {
+export const runAgent = async (message: string, userId: string, history: AgentHistoryMessage[] = []): Promise<AgentResult> => {
   const user = await User.findById(userId).select('name githubUsername currentAddress');
   const profile: AgentProfile = {
     name: user?.get('name'),
@@ -382,12 +414,30 @@ export const runAgent = async (message: string, userId: string): Promise<AgentRe
     currentAddress: user?.get('currentAddress') || undefined,
   };
 
+  const resolvedMessage = resolveMessageReference(message, history);
+
+  if (isDocumentQuestion(resolvedMessage) || (await hasReadyDocuments(userId) && !isNonDocumentToolQuestion(resolvedMessage))) {
+    try {
+      const mode = /prepare|generate|create|make|draft|write|suggest|practice|mock|question|questions|interview/i.test(resolvedMessage) ? 'document_generation' : 'rag_search';
+      const result = await answerFromDocuments(resolvedMessage, userId, mode);
+      if (result.sources.length || !result.answer.toLowerCase().includes('no uploaded documents')) {
+        return {
+          answer: result.answer,
+          toolsUsed: ['document_tool'],
+          suggestions: ['Ask from this document', 'Create interview questions', 'Summarize this document'],
+        };
+      }
+    } catch (error) {
+      logger.error('Direct document answer failed; trying LangChain agent', error);
+    }
+  }
+
   try {
-    const langChainResult = await runLangChainAgent(message, userId, profile);
+    const langChainResult = await runLangChainAgent(resolvedMessage, userId, profile, history);
     if (langChainResult) return langChainResult;
   } catch (error) {
     logger.error('LangChain agent failed; using deterministic fallback', error);
   }
 
-  return runDeterministicAgent(message, userId, profile);
+  return runDeterministicAgent(resolvedMessage, userId, profile);
 };

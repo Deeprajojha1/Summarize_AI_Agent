@@ -1,27 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { FiCpu, FiMessageCircle, FiMinus, FiSend, FiX } from 'react-icons/fi';
+import { FiCpu, FiFileText, FiMessageCircle, FiMinus, FiPaperclip, FiSend, FiX } from 'react-icons/fi';
 import { motion } from 'framer-motion';
 import { useAppDispatch, useAppSelector } from '../../hooks/useAuth';
 import { resetChat } from '../../redux/slices/aiSlice';
-import { sendAIMessage } from '../../redux/thunks/aiThunk';
+import { sendAIMessage, uploadAIDocument } from '../../redux/thunks/aiThunk';
 import AIMessage from './AIMessage';
 import AIPromptSuggestions from './AIPromptSuggestions';
 import TypingAnimation from './TypingAnimation';
 import ClipLoader from '../common/ClipLoader';
+
+const ACCEPTED_DOCUMENT_TYPES = '.pdf,.txt,.md,.doc,.docx,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 
 export default function AIChatPanel() {
   const [message, setMessage] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
   const [isClosed, setIsClosed] = useState(true);
   const [showQuickQuestions, setShowQuickQuestions] = useState(true);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const dispatch = useAppDispatch();
-  const { messages, suggestions, loading } = useAppSelector((state) => state.ai);
+  const { messages, suggestions, loading, uploadLoading } = useAppSelector((state) => state.ai);
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, loading]);
+  }, [messages.length, loading, uploadLoading]);
 
   const send = (text = message) => {
     if (!text.trim()) return;
@@ -29,7 +35,46 @@ export default function AIChatPanel() {
     void dispatch(sendAIMessage(text));
     setMessage('');
   };
-  const submit = (event: FormEvent) => { event.preventDefault(); send(); };
+
+  const pickDocument = (file: File) => {
+    setFileError('');
+    if (file.size > MAX_DOCUMENT_SIZE) {
+      setSelectedFile(null);
+      setFileError('Document must be 10MB or smaller.');
+      return;
+    }
+    setSelectedFile(file);
+    setShowQuickQuestions(false);
+  };
+
+  const clearSelectedFile = () => {
+    setSelectedFile(null);
+    setFileError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const text = message.trim();
+
+    if (!text && !selectedFile) return;
+
+    if (selectedFile) {
+      const file = selectedFile;
+      clearSelectedFile();
+      setMessage('');
+      setShowQuickQuestions(false);
+      const uploaded = await dispatch(uploadAIDocument(file));
+      if (uploadAIDocument.fulfilled.match(uploaded) && text) {
+        void dispatch(sendAIMessage(text));
+      }
+      return;
+    }
+
+    send(text);
+  };
+
+  const isBusy = loading || uploadLoading;
 
   if (isClosed || isMinimized) {
     return (
@@ -63,6 +108,7 @@ export default function AIChatPanel() {
             onClick={() => {
               dispatch(resetChat());
               setMessage('');
+              clearSelectedFile();
               setShowQuickQuestions(true);
               setIsClosed(true);
             }}
@@ -76,7 +122,7 @@ export default function AIChatPanel() {
           <div className="ai-thread">
             <div className="ai-floating-avatar"><FiCpu /></div>
             {messages.map((item) => <AIMessage key={item.id} message={item} />)}
-            {loading && <TypingAnimation />}
+            {isBusy && <TypingAnimation />}
             <div ref={threadEndRef} />
           </div>
           {showQuickQuestions && (
@@ -86,9 +132,37 @@ export default function AIChatPanel() {
             </section>
           )}
           <form className="ai-input" onSubmit={submit}>
-            <input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Ask a question..." />
-            <button className={message.trim() || loading ? 'active' : ''} type="submit" aria-label="Send" disabled={loading}>
-              {loading ? <ClipLoader /> : <FiSend />}
+            {(selectedFile || fileError) && (
+              <div className={`ai-file-chip ${fileError ? 'error' : ''}`}>
+                <FiFileText />
+                <span>{fileError || selectedFile?.name}</span>
+                <button type="button" aria-label="Remove selected document" onClick={clearSelectedFile}>
+                  <FiX />
+                </button>
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              className="ai-file-input"
+              type="file"
+              accept={ACCEPTED_DOCUMENT_TYPES}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) pickDocument(file);
+              }}
+            />
+            <button
+              className="ai-attach-btn"
+              type="button"
+              aria-label="Attach document"
+              disabled={isBusy}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <FiPaperclip />
+            </button>
+            <input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={selectedFile ? 'Ask from this document...' : 'Ask a question...'} />
+            <button className={message.trim() || selectedFile || isBusy ? 'active' : ''} type="submit" aria-label="Send" disabled={isBusy}>
+              {isBusy ? <ClipLoader /> : <FiSend />}
             </button>
           </form>
         </>

@@ -3,3 +3,8 @@ export type AgentResult = {
   toolsUsed: string[];
   suggestions: string[];
 };
+
+export type AgentHistoryMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};

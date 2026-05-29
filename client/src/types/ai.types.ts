@@ -10,3 +10,11 @@ export type AIResponse = {
   toolsUsed: string[];
   suggestions: string[];
 };
+
+export type AIDocumentUploadResponse = {
+  document: {
+    id: string;
+    filename: string;
+  };
+  message?: string;
+};
